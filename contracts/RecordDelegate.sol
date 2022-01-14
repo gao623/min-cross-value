@@ -17,15 +17,33 @@ contract RecordDelegate is
         uint  amount;
     }
 
+    struct SetCrossChainAgentFeeParam {
+        uint  srcChainID;
+        uint  destChainID;
+        uint  tokenPairID;
+        uint  value;
+        bool  isPercent;
+    }
+
+    struct CrossChainAgentFee {
+        uint  numerator;
+        uint  denominator;
+    }
+
     /** State Variables */
     // symbol => chainID => amount
     mapping(bytes => mapping(uint => uint)) public minCrossChainAmounts;
 
+    // srcChainID => destChainID => tokenPairID => CrossChainAgentFee
+    mapping(uint => mapping(uint => mapping(uint => CrossChainAgentFee))) internal mapCrossChainAgentFees;
+
     /** Constant Variables */
     bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR");
+    uint256 public constant DENOMINATOR = 1 ether;
 
     /** Events */
     event SetMinCrossChainAmount(uint256 indexed chainID, uint256 amount, bytes symbol);
+    event SetCrossChainAgentFee(uint256 indexed srcChainID, uint256 indexed destChainID, uint256 indexed tokenPairID, uint256 numerator, uint256 denominator, bool isPercent);
 
     /** Modifier */
     modifier onlyOperator() {
@@ -67,4 +85,47 @@ contract RecordDelegate is
         return minCrossChainAmounts[symbol][chainID];
     }
 
+    function setCrossChainAgentFees(SetCrossChainAgentFeeParam [] calldata params)
+        external
+        onlyOperator
+    {
+        uint256 denominator;
+        for (uint i = 0; i < params.length; ++i) {
+            if (params[i].isPercent) {
+                denominator = DENOMINATOR;
+                require(params[i].value < DENOMINATOR, "too large value");
+            }
+            mapCrossChainAgentFees[params[i].srcChainID][params[i].destChainID][params[i].tokenPairID] = CrossChainAgentFee({
+                numerator: params[i].value,
+                denominator: denominator
+            });
+            emit SetCrossChainAgentFee(params[i].srcChainID, params[i].destChainID, params[i].tokenPairID, params[i].value, denominator, params[i].isPercent);
+        }
+    }
+
+    function setCrossChainAgentFee(SetCrossChainAgentFeeParam calldata param)
+        external
+        onlyOperator
+    {
+        uint256 denominator;
+        if (param.isPercent) {
+            denominator = DENOMINATOR;
+            require(param.value < DENOMINATOR, "too large value");
+        }
+        mapCrossChainAgentFees[param.srcChainID][param.destChainID][param.tokenPairID] = CrossChainAgentFee({
+            numerator: param.value,
+            denominator: denominator
+        });
+        emit SetCrossChainAgentFee(param.srcChainID, param.destChainID, param.tokenPairID, param.value, denominator, param.isPercent);
+    }
+
+    function getCrossChainAgentFee(uint256 srcChainID, uint256 destChainID, uint256 tokenPairID)
+        external
+        view
+        returns (uint256 numerator, uint256 denominator)
+    {
+        CrossChainAgentFee storage feeInfo = mapCrossChainAgentFees[srcChainID][destChainID][tokenPairID];
+        numerator = feeInfo.numerator;
+        denominator = feeInfo.denominator;
+    }
 }
